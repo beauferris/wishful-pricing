@@ -1,0 +1,248 @@
+{% comment %}
+  Vinyl sticker dimensions — line item properties for Wishful Pricing.
+
+  One render for all Wishful products (auto-sync from admin):
+    {% render 'wishful-pricing', product: product, product_form_id: product_form_id %}
+
+  Optional volume tag if metafield not synced yet: wishful-volume
+{% endcomment %}
+
+{% liquid
+  assign wishful_volume_only = wishful_volume_only | default: false
+%}
+
+{% unless wishful_volume_only %}
+<fieldset class="wishful-vinyl-properties" data-wishful-vinyl-properties>
+  <span class="form_label">Sticker size</span>
+
+  <div class="wishful-vinyl-properties__size-row">
+    <div class="wishful-vinyl-properties__field">
+      <label class="form_label form_label--small" for="wishful-width-{{ section.id }}">Width (in)</label>
+      <input
+        id="wishful-width-{{ section.id }}"
+        type="number"
+        name="properties[width]"
+        value="4"
+        min="0.1"
+        step="0.1"
+        inputmode="decimal"
+        required
+        form="{{ product_form_id }}"
+      >
+    </div>
+
+    <div class="wishful-vinyl-properties__field">
+      <label class="form_label form_label--small" for="wishful-height-{{ section.id }}">Height (in)</label>
+      <input
+        id="wishful-height-{{ section.id }}"
+        type="number"
+        name="properties[height]"
+        value="2"
+        min="0.1"
+        step="0.1"
+        inputmode="decimal"
+        required
+        form="{{ product_form_id }}"
+      >
+    </div>
+
+    <p class="wishful-vinyl-properties__area" data-wishful-area-inline aria-live="polite">—</p>
+  </div>
+
+  <div class="wishful-vinyl-properties__row wishful-vinyl-properties__row--checkbox">
+    <div data-wishful-modifiers></div>
+  </div>
+</fieldset>
+
+<style>
+  .wishful-vinyl-properties {
+    margin: 1rem 0;
+    padding: 0;
+    border: 0;
+  }
+  
+  .wishful-vinyl-properties__size-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.75rem 1rem;
+    margin: 0.75rem 0;
+  }
+  .wishful-vinyl-properties__field {
+    display: grid;
+    min-width: 5rem;
+  }
+  
+  .wishful-vinyl-properties__field input[type="number"] {
+    padding: 0.5rem 0.6rem;
+  }
+  .wishful-vinyl-properties__area {
+    display:none;
+    flex: 1 1 12rem;
+    margin: 0;
+    padding-bottom: 0.55rem;
+    font-size: 1.2rem;
+    color: #4b5563;
+    line-height: 1.35;
+    align-self: center;
+  }
+  .wishful-vinyl-properties__row--checkbox label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: normal;
+    font-size: 1.2rem;
+  }
+  .form_label--small{
+    font-size: 1.2rem;
+  }
+</style>
+
+<script>
+  (function () {
+    const form =
+      (typeof window.wishfulGetCartForm === 'function' && window.wishfulGetCartForm()) ||
+      document.querySelector('form[action*="/cart/add"]');
+    if (!form) return;
+
+    const q =
+      typeof window.wishfulQueryInForm === 'function'
+        ? window.wishfulQueryInForm.bind(null, form)
+        : (sel) => form.querySelector(sel) || document.querySelector(sel);
+
+    const widthInput = q('[name="properties[width]"]');
+    const heightInput = q('[name="properties[height]"]');
+    const areaEl = document.querySelector('[data-wishful-area-inline]');
+    if (!widthInput || !heightInput || !areaEl) return;
+
+    const cfg =
+      typeof window.wishfulReadPricingConfig === 'function' &&
+      window.wishfulReadPricingConfig();
+    const modifiersHost = document.querySelector('[data-wishful-modifiers]');
+    if (modifiersHost && cfg) {
+      const mods = (Array.isArray(cfg.modifiers) ? cfg.modifiers : [])
+        .filter((m) => m && typeof m === 'object')
+        .map((m) => ({ ...m, amountPerUnit: Number(m.amountPerUnit) }))
+        .filter((m) => Number.isFinite(m.amountPerUnit) && m.amountPerUnit !== 0)
+        .filter((m) => m.key && String(m.key).trim() !== '');
+
+      modifiersHost.innerHTML = mods
+        .map((m, i) => {
+          const key = String(m.key).trim();
+          const label = String(m.label || key);
+          const amount = Number(m.amountPerUnit) || 0;
+          const sign = amount >= 0 ? '+' : '−';
+          const abs = Math.abs(amount);
+          const formatted = new Intl.NumberFormat(undefined, {
+            style: 'currency',
+            currency: '{{ cart.currency.iso_code | default: shop.currency }}',
+          }).format(abs);
+
+          const id = 'wishful-mod-' + key.replace(/[^a-z0-9_-]/gi, '') + '-' + i;
+          return (
+            '<label for="' +
+            id +
+            '">' +
+            '<input id="' +
+            id +
+            '" type="checkbox" name="properties[' +
+            key +
+            ']" value="true" form="{{ product_form_id }}">' +
+            label +
+            ' (' +
+            sign +
+            formatted +
+            ' per unit)' +
+            '</label>'
+          );
+        })
+        .join('');
+
+      let selectedInput = q('[name="properties[wishful_modifiers]"]');
+      if (!selectedInput) {
+        selectedInput = document.createElement('input');
+        selectedInput.type = 'hidden';
+        selectedInput.name = 'properties[wishful_modifiers]';
+        selectedInput.setAttribute('form', '{{ product_form_id }}');
+        form.appendChild(selectedInput);
+      }
+
+      function syncSelectedModifiers() {
+        const keys = Array.from(
+          modifiersHost.querySelectorAll('input[type="checkbox"][name^="properties["]'),
+        )
+          .filter((input) => input.checked)
+          .map((input) => {
+            const m = input.name.match(/^properties\[(.+)\]$/);
+            return m ? m[1] : '';
+          })
+          .filter(Boolean);
+        selectedInput.value = keys.join(',');
+      }
+
+      modifiersHost.addEventListener('change', syncSelectedModifiers);
+      syncSelectedModifiers();
+    }
+
+    const productRoot =
+      form.closest('.product') ||
+      form.closest('product-info') ||
+      form.closest('[data-section-type="product"]') ||
+      form;
+
+    function formatNumber(n, decimals) {
+      return n.toLocaleString(undefined, {
+        maximumFractionDigits: decimals,
+        minimumFractionDigits: 0,
+      });
+    }
+
+    function readQuantity() {
+      const input = productRoot.querySelector(
+        'quantity-input input[name="quantity"], input.quantity__input[name="quantity"], [name="quantity"]',
+      );
+      const qty = parseInt(input?.value, 10);
+      return qty > 0 ? qty : 1;
+    }
+
+    function updateArea() {
+      const w = parseFloat(widthInput.value);
+      const h = parseFloat(heightInput.value);
+      const qty = readQuantity();
+
+      if (!w || !h || w <= 0 || h <= 0) {
+        areaEl.textContent = '—';
+        return;
+      }
+
+      const sqIn = w * h;
+      let text = formatNumber(sqIn, 2) + ' sq in';
+      if (qty > 1) {
+        text += ' · ' + formatNumber(sqIn * qty, 2) + ' sq in total';
+      }
+      areaEl.textContent = text;
+    }
+
+    ['input', 'change'].forEach((evt) => {
+      widthInput.addEventListener(evt, updateArea);
+      heightInput.addEventListener(evt, updateArea);
+      form.addEventListener(evt, updateArea);
+    });
+
+    productRoot.addEventListener(
+      'click',
+      (event) => {
+        if (
+          event.target.closest(
+            'quantity-input button, .quantity__button, [name="plus"], [name="minus"]',
+          )
+        ) {
+          setTimeout(updateArea, 0);
+        }
+      },
+      true,
+    );
+
+    updateArea();
+  })();
+</script>
+{% endunless %}

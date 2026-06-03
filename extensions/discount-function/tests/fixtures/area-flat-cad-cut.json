@@ -1,0 +1,79 @@
+{
+  "payload": {
+    "export": "cart-lines-discounts-generate-run",
+    "target": "cart.lines.discounts.generate.run",
+    "input": {
+      "cart": {
+        "lines": [
+          {
+            "id": "gid://shopify/CartLine/1",
+            "quantity": 2,
+            "cost": {
+              "subtotalAmount": {
+                "amount": "200.00"
+              }
+            },
+            "width": { "value": "4" },
+            "widthLabel": null,
+            "widthInchesProp": null,
+            "height": { "value": "2" },
+            "heightLabel": null,
+            "heightInchesProp": null,
+            "squareInches": null,
+            "individuallyCut": null,
+            "individuallyCutLabel": null,
+            "pinBack": null,
+            "merchandise": {
+              "__typename": "ProductVariant",
+              "id": "gid://shopify/ProductVariant/1",
+              "product": { "id": "gid://shopify/Product/1" },
+              "widthInches": { "value": "2" },
+              "heightInches": { "value": "1.5" },
+              "individuallyCut": null
+            }
+          }
+        ],
+        "buyerIdentity": null
+      },
+      "discount": {
+        "discountClasses": ["PRODUCT"],
+        "metafield": {
+          "jsonValue": {
+            "pricingMode": "area_flat",
+            "areaTiers": [
+              { "label": "Small (up to 6 sq in)", "maxSqIn": 6 },
+              { "label": "Medium (6–16 sq in)", "minSqIn": 6, "maxSqIn": 16 },
+              { "label": "Large (16–40 sq in)", "minSqIn": 16, "maxSqIn": 40 },
+              { "label": "Extra large (to 100 sq in)", "minSqIn": 40, "maxSqIn": 100 }
+            ],
+            "quantityTiers": [{ "label": "Per piece", "min": 1 }],
+            "rates": [[3], [4], [6.5], [10.75]],
+            "extraFeePerUnit": 0,
+            "maxArea": 100
+          }
+        }
+      }
+    },
+    "output": {
+      "operations": [
+        {
+          "productDiscountsAdd": {
+            "selectionStrategy": "ALL",
+            "candidates": [
+              {
+                "message": "$4.00 each — Medium (6–16 sq in) (8 sq in)",
+                "targets": [{ "cartLine": { "id": "gid://shopify/CartLine/1" } }],
+                "value": {
+                  "fixedAmount": {
+                    "amount": "192.00",
+                    "appliesToEachItem": false
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

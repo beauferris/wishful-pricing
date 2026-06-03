@@ -1,0 +1,30 @@
+{% liquid
+  assign wishful_form_id = block.settings.product_form_id
+  if wishful_form_id == blank
+    assign wishful_form_id = 'product-form-' | append: section.id
+  endif
+%}
+
+{% render 'wishful-pricing', product: product, product_form_id: wishful_form_id %}
+
+{% schema %}
+{
+  "name": "Wishful pricing",
+  "target": "section",
+  "enabled_on": {
+    "templates": ["product"]
+  },
+  "settings": [
+    {
+      "type": "paragraph",
+      "content": "t:wishful_pricing.setup"
+    },
+    {
+      "type": "text",
+      "id": "product_form_id",
+      "label": "t:wishful_pricing.form_id_label",
+      "info": "Usually leave blank — the app detects your add-to-cart form automatically (e.g. product-form-template--22463579455577__main). Paste the form id only if detection fails."
+    }
+  ]
+}
+{% endschema %}

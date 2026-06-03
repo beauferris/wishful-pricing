@@ -1,0 +1,228 @@
+{% comment %}
+  Ensures Wishful line item properties reach /cart/add (JSON and FormData).
+{% endcomment %}
+
+<script>
+  (function () {
+    const form =
+      (typeof window.wishfulGetCartForm === 'function' && window.wishfulGetCartForm()) ||
+      document.querySelector('form[action*="/cart/add"]');
+    if (!form) return;
+
+    const q =
+      typeof window.wishfulQueryInForm === 'function'
+        ? window.wishfulQueryInForm.bind(null, form)
+        : (sel) => form.querySelector(sel) || document.querySelector(sel);
+
+    /** @returns {string} Form element id for form-associated fields outside the form node. */
+    function getFormId() {
+      if (typeof window.wishfulGetFormId === 'function') {
+        var fromRoot = window.wishfulGetFormId();
+        if (fromRoot) return String(fromRoot);
+      }
+      if (typeof window.wishfulFormElementId === 'function') {
+        return window.wishfulFormElementId(form);
+      }
+      return String(form.getAttribute('id') || '');
+    }
+
+    const widthInput = q('[name="properties[width]"]');
+    const heightInput = q('[name="properties[height]"]');
+    let sqInInput = q('[name="properties[square_inches]"]');
+
+    if (!sqInInput && widthInput && heightInput) {
+      sqInInput = document.createElement('input');
+      sqInInput.type = 'hidden';
+      sqInInput.name = 'properties[square_inches]';
+      const formId = getFormId();
+      if (formId) sqInInput.setAttribute('form', formId);
+      form.appendChild(sqInInput);
+    }
+
+    function getPropertyInputs() {
+      const seen = new Set();
+      const out = [];
+      const sel =
+        'input[name^="properties["], select[name^="properties["], textarea[name^="properties["]';
+
+      function add(el) {
+        if (!el || seen.has(el)) return;
+        seen.add(el);
+        out.push(el);
+      }
+
+      form.querySelectorAll(sel).forEach(add);
+      const formId = String(getFormId() || '');
+      if (formId) {
+        document
+          .querySelectorAll('[form="' + formId.replace(/"/g, '\\"') + '"]')
+          .forEach((el) => {
+            if (el.name && /^properties\[/.test(el.name)) add(el);
+          });
+      }
+      return out;
+    }
+
+    function isFakeFilePath(value) {
+      return (
+        typeof value === 'string' &&
+        (value.includes('fakepath') || /^[a-zA-Z]:\\/.test(value))
+      );
+    }
+
+    function syncSquareInches() {
+      if (!sqInInput || !widthInput || !heightInput) return;
+      const w = parseFloat(widthInput.value);
+      const h = parseFloat(heightInput.value);
+      if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) {
+        sqInInput.value = String(Math.round(w * h * 1000) / 1000);
+      } else {
+        sqInInput.value = '';
+      }
+    }
+
+    function readProperties() {
+      /** @type {Record<string, string>} */
+      const props = {};
+
+      getPropertyInputs().forEach((el) => {
+        const match = el.name && el.name.match(/^properties\[(.+)\]$/);
+        if (!match) return;
+        const key = match[1];
+
+        if (el.type === 'file') return;
+
+        if (el.type === 'checkbox') {
+          if (el.checked) props[key] = el.value || 'true';
+          return;
+        }
+        if (el.type === 'radio') {
+          if (el.checked) props[key] = el.value;
+          return;
+        }
+        if (el.value !== '' && el.value != null) {
+          const value = String(el.value);
+          if (!isFakeFilePath(value)) props[key] = value;
+        }
+      });
+
+      syncSquareInches();
+      if (sqInInput && sqInInput.value) {
+        props.square_inches = sqInInput.value;
+      }
+
+      if (typeof window.wishfulResolveAccountTierKey === 'function') {
+        const tierKey = window.wishfulResolveAccountTierKey();
+        if (tierKey) props.wishful_account_tier = tierKey;
+      }
+
+      return props;
+    }
+
+    function getContentType(init) {
+      if (!init || !init.headers) return '';
+      const h = init.headers;
+      if (typeof h.get === 'function') return h.get('Content-Type') || '';
+      return h['Content-Type'] || '';
+    }
+
+    function mergePropertiesIntoBody(url, init) {
+      if (!init || init.body == null) return init;
+
+      syncSquareInches();
+
+      const contentType = getContentType(init);
+      const isJson = String(contentType).includes('application/json');
+
+      const props = readProperties();
+      if (!Object.keys(props).length) return init;
+
+      try {
+        if (isJson) {
+          const body = JSON.parse(String(init.body));
+          if (Array.isArray(body.items)) {
+            body.items = body.items.map((item) => {
+              const merged = { ...props, ...(item.properties || {}) };
+              Object.keys(merged).forEach((k) => {
+                if (isFakeFilePath(merged[k])) delete merged[k];
+              });
+              return { ...item, properties: merged };
+            });
+          } else {
+            const merged = { ...props, ...(body.properties || {}) };
+            Object.keys(merged).forEach((k) => {
+              if (isFakeFilePath(merged[k])) delete merged[k];
+            });
+            body.properties = merged;
+          }
+          return { ...init, body: JSON.stringify(body) };
+        }
+
+        if (init.body instanceof FormData) {
+          const fd = init.body;
+          Object.entries(props).forEach(([key, value]) => {
+            fd.set('properties[' + key + ']', value);
+          });
+          return init;
+        }
+      } catch (e) {
+        console.warn('[wishful-pricing] cart/add property merge failed', e);
+      }
+
+      return init;
+    }
+
+    if (widthInput) {
+      ['input', 'change'].forEach((evt) => widthInput.addEventListener(evt, syncSquareInches));
+    }
+    if (heightInput) {
+      ['input', 'change'].forEach((evt) => heightInput.addEventListener(evt, syncSquareInches));
+    }
+    syncSquareInches();
+
+    form.addEventListener(
+      'submit',
+      function () {
+        syncSquareInches();
+      },
+      true,
+    );
+
+    function ensureAccountTierBeforeCart() {
+      if (typeof window.wishfulEnsureCartAccountTier !== 'function') {
+        return Promise.resolve();
+      }
+      return window.wishfulEnsureCartAccountTier();
+    }
+
+    let accountTierSyncedForSubmit = false;
+    form.addEventListener(
+      'submit',
+      function (event) {
+        if (accountTierSyncedForSubmit) return;
+        if (typeof window.wishfulEnsureCartAccountTier !== 'function') return;
+        event.preventDefault();
+        event.stopPropagation();
+        ensureAccountTierBeforeCart().then(function () {
+          accountTierSyncedForSubmit = true;
+          form.submit();
+        });
+      },
+      true,
+    );
+
+    const originalFetch = window.fetch;
+    window.fetch = function (input, init) {
+      const url = typeof input === 'string' ? input : input?.url || '';
+      if (url.includes('/cart/add')) {
+        return ensureAccountTierBeforeCart().then(function () {
+          init = mergePropertiesIntoBody(url, init || {});
+          return originalFetch.call(this, input, init);
+        });
+      }
+      return originalFetch.call(this, input, init);
+    };
+
+    ensureAccountTierBeforeCart();
+  })();
+</script>

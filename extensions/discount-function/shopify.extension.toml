@@ -1,0 +1,16 @@
+api_version = "2026-04"
+
+[[extensions]]
+name        = "Wishful Area Pricing"
+handle      = "wishful-volume-discount"
+uid = "8a91ab49-00ad-e99f-5e8f-e74a093f8ed60fa92940"
+type        = "function"
+description = "Area × quantity, flat size band, and volume pricing with optional B2B account discounts."
+
+[[extensions.targeting]]
+target      = "cart.lines.discounts.generate.run"
+input_query = "src/run.graphql"
+export      = "cart-lines-discounts-generate-run"
+
+[extensions.ui]
+handle = "wishful-vinyl-settings"

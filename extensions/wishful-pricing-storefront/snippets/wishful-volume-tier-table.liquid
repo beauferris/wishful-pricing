@@ -1,0 +1,71 @@
+{% comment %}
+  Shared volume pricing table markup + styles.
+
+  Parameters:
+  - show_discount_column: optional, true for area × quantity (discount % column)
+  - hidden: optional, start hidden (vinyl tiers until size is entered)
+  - title: optional, default "Volume pricing"
+{% endcomment %}
+
+{% liquid
+  assign wishful_table_title = title | default: 'Volume pricing'
+  assign wishful_show_discount = show_discount_column | default: false
+  assign wishful_table_hidden = hidden | default: false
+%}
+
+<div
+  class="wishful-volume-table"
+  data-wishful-volume-table
+  {% if wishful_table_hidden %}
+    hidden
+  {% endif %}
+>
+  <p class="wishful-volume-table__title form_label">{{ wishful_table_title }}</p>
+  <table class="wishful-volume-table__grid">
+    <tbody data-wishful-volume-tier-body></tbody>
+  </table>
+</div>
+
+<style>
+  .wishful-volume-table {
+    margin: 0.75rem 0 0;
+  }
+  .wishful-volume-table__title {
+    margin: 0 0 0.5rem;
+    font-size: 1.4rem;
+    font-weight: 600;
+    color: #1a1a2e;
+  }
+  .wishful-volume-table__grid {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 1.4rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+  .wishful-volume-table__grid td {
+    padding: 0.45rem 0.5rem;
+    color: #4b5563;
+  }
+  .wishful-volume-table__grid td:last-child {
+    text-align: right;
+    font-weight: 600;
+    color: #1a1a2e;
+  }
+  {% if wishful_show_discount %}
+  .wishful-volume-table__grid td:nth-child(2) {
+    text-align: end;
+    font-weight: 400;
+    color: #6b7280;
+  }
+  {% endif %}
+  .wishful-volume-table__row--active td {
+    color: #1a1a2e;
+  }
+  .wishful-volume-table__row--active {
+    background: #fff4e6;
+    border-radius: 6px;
+  }
+  .wishful-volume-table__row--active td:last-child {
+    font-weight: 700;
+  }
+</style>

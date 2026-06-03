@@ -1,0 +1,74 @@
+{% comment %}
+  Keeps wishful_account_tier on the cart for logged-in B2B customers.
+  Included from wishful-pricing on product pages; add to cart template for cart-page sync.
+{% endcomment %}
+
+{% unless customer %}
+{% else %}
+  {% liquid
+    assign wishful_catalog = shop.metafields.app.pricing_catalog.value
+    if wishful_catalog == blank
+      assign wishful_catalog = shop.metafields['$app'].pricing_catalog.value
+    endif
+    if wishful_catalog == blank
+      assign wishful_catalog = shop.metafields.wishful.pricing_catalog.value
+    endif
+  %}
+
+  {% if wishful_catalog != blank %}
+    <script type="application/json" id="wishful-pricing-catalog-cart">
+      {{- wishful_catalog | json -}}
+    </script>
+  {% endif %}
+
+  <script>
+    (function () {
+      window.WISHFUL_CUSTOMER_TAGS = {{ customer.tags | json }};
+
+      if (typeof window.wishfulEnsureCartAccountTier === 'function') {
+        window.wishfulEnsureCartAccountTier();
+        return;
+      }
+
+      var catalogEl =
+        document.getElementById('wishful-pricing-catalog') ||
+        document.getElementById('wishful-pricing-catalog-cart');
+      if (!catalogEl || typeof fetch !== 'function') return;
+
+      try {
+        var catalog = JSON.parse(catalogEl.textContent || '{}');
+        var keys = catalog.__wishfulAccountTierKeys;
+        if (!Array.isArray(keys) || !keys.length) return;
+
+        var tags = window.WISHFUL_CUSTOMER_TAGS || [];
+        var tierKey = null;
+        for (var i = 0; i < tags.length; i++) {
+          var tag = String(tags[i]).trim().toLowerCase();
+          for (var j = 0; j < keys.length; j++) {
+            if (String(keys[j]).trim().toLowerCase() === tag) {
+              tierKey = keys[j];
+              break;
+            }
+          }
+          if (tierKey) break;
+        }
+
+        if (!tierKey) return;
+
+        try {
+          sessionStorage.setItem('wishful_account_tier', tierKey);
+        } catch (e) {}
+
+        fetch('/cart/update.js', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            attributes: { wishful_account_tier: tierKey },
+          }),
+        }).catch(function () {});
+      } catch (e) {
+        console.warn('[wishful-pricing] cart tier bootstrap failed', e);
+      }
+    })();
+  </script>
+{% endunless %}

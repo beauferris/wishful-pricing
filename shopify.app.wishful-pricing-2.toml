@@ -1,0 +1,42 @@
+# Public app — active config. Deploy with: npm run deploy
+# Before App Store submit: host web/app-home and set application_url (docs/HOST-APP-HOME.md)
+
+client_id = "d511596b43f73e35a9d4e950a9ecf2b1"
+name = "Wishful Pricing 2"
+application_url = "https://shopify.dev/apps/default-app-home"
+embedded = true
+
+[access_scopes]
+scopes = "write_discounts,read_products,write_products"
+optional_scopes = [ ]
+use_legacy_install_flow = false
+
+[discount.metafields.app.function-configuration]
+type = "json"
+name = "Function configuration"
+description = "Vinyl pricing rate table and fees"
+access.admin = "merchant_read_write"
+access.storefront = "none"
+
+[product.metafields.app.pricing_config]
+type = "json"
+name = "Wishful storefront pricing"
+description = "Synced from discount admin for product-page price tables"
+access.admin = "merchant_read_write"
+access.storefront = "public_read"
+
+[shop.metafields.app.pricing_catalog]
+type = "json"
+name = "Wishful pricing catalog"
+description = "All product pricing configs for theme (keyed by product id)"
+access.admin = "merchant_read"
+access.storefront = "public_read"
+
+[webhooks]
+api_version = "2026-04"
+
+[auth]
+redirect_urls = [ ]
+
+[build]
+automatically_update_urls_on_dev = true

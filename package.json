@@ -1,0 +1,23 @@
+{
+  "name": "wishful-pricing",
+  "version": "1.0.0",
+  "license": "UNLICENSED",
+  "scripts": {
+    "shopify": "PATH=\"$HOME/.local/node-v22/bin:$PATH\" shopify",
+    "build": "PATH=\"$HOME/.local/node-v22/bin:$PATH\" shopify app build",
+    "dev": "PATH=\"$HOME/.local/node-v22/bin:$PATH\" shopify app dev -c wishful-pricing-2",
+    "info": "PATH=\"$HOME/.local/node-v22/bin:$PATH\" shopify app info -c wishful-pricing-2",
+    "generate": "PATH=\"$HOME/.local/node-v22/bin:$PATH\" shopify app generate -c wishful-pricing-2",
+    "deploy": "PATH=\"$HOME/.local/node-v22/bin:$PATH\" shopify app deploy -c wishful-pricing-2",
+    "link-public": "PATH=\"$HOME/.local/node-v22/bin:$PATH\" shopify app config link"
+  },
+  "dependencies": {},
+  "trustedDependencies": [
+    "@shopify/plugin-cloudflare"
+  ],
+  "author": "hamzeybeauferris",
+  "private": true,
+  "workspaces": [
+    "extensions/*"
+  ]
+}

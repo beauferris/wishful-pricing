@@ -1,0 +1,87 @@
+query RunInput {
+  cart {
+    wishfulAccountTier: attribute(key: "wishful_account_tier") {
+      value
+    }
+    lines {
+      id
+      quantity
+      wishfulModifiers: attribute(key: "wishful_modifiers") {
+        value
+      }
+      cost {
+        subtotalAmount {
+          amount
+        }
+      }
+      width: attribute(key: "width") {
+        value
+      }
+      widthLabel: attribute(key: "Width (inches)") {
+        value
+      }
+      height: attribute(key: "height") {
+        value
+      }
+      heightLabel: attribute(key: "Height (inches)") {
+        value
+      }
+      squareInches: attribute(key: "square_inches") {
+        value
+      }
+      individuallyCut: attribute(key: "individually_cut") {
+        value
+      }
+      pinBack: attribute(key: "pin_back") {
+        value
+      }
+      wishfulAccountTier: attribute(key: "wishful_account_tier") {
+        value
+      }
+      merchandise {
+        __typename
+        ... on ProductVariant {
+          id
+          product {
+            id
+          }
+        }
+      }
+    }
+    buyerIdentity {
+      customer {
+        accountTier: metafield(namespace: "wishful", key: "account_tier") {
+          value
+        }
+        tagChecks: hasTags(
+          tags: [
+            "wholesale"
+            "b2b"
+            "trade"
+            "dealer"
+            "commercial"
+            "vip"
+            "reseller"
+            "partner"
+            "pro"
+            "account"
+          ]
+        ) {
+          tag
+          hasTag
+        }
+      }
+      purchasingCompany {
+        company {
+          id
+        }
+      }
+    }
+  }
+  discount {
+    discountClasses
+    metafield(namespace: "$app", key: "function-configuration") {
+      jsonValue
+    }
+  }
+}

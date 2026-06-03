@@ -1,0 +1,7 @@
+api_version = "2026-04"
+
+[[extensions]]
+name = "Wishful pricing storefront"
+handle = "wishful-pricing-storefront"
+type = "theme"
+uid = "145b797a-ddad-6824-0ad9-6e1ab79fc1bae9de3390"

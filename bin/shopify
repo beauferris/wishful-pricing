@@ -1,0 +1,3 @@
+#!/bin/zsh
+export PATH="$HOME/.local/node-v22/bin:$PATH"
+exec shopify "$@"

@@ -1,0 +1,274 @@
+{% comment %}
+  Width × height → size band → flat price per piece (no volume qty breaks).
+  Uses shared wishful-volume-tier-table (title: Size bands).
+{% endcomment %}
+
+<div id="wishful-area-flat-pricing" class="wishful-vinyl-pricing">
+  <p class="wishful-vinyl-pricing__label">Price per piece</p>
+  <p class="wishful-vinyl-pricing__price" data-wishful-unit>—</p>
+  <p class="wishful-vinyl-pricing__total" data-wishful-total></p>
+
+  {% render 'wishful-volume-tier-table', title: 'Size bands' %}
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const run = function () {
+    const VT = window.WishfulVolumeTable;
+    if (!VT) return;
+
+    const DEFAULT_BANDS = [
+      { label: 'Small (up to 6 sq in)', maxSqIn: 6 },
+      { label: 'Medium (6–16 sq in)', minSqIn: 6, maxSqIn: 16 },
+      { label: 'Large (16–40 sq in)', minSqIn: 16, maxSqIn: 40 },
+      { label: 'Extra large (to 100 sq in)', minSqIn: 40, maxSqIn: 100 },
+    ];
+    const DEFAULT_PRICES = [3, 4, 6.5, 10.75];
+
+    function readConfig() {
+      return typeof window.wishfulReadPricingConfig === 'function'
+        ? window.wishfulReadPricingConfig()
+        : null;
+    }
+
+    const initialConfig = readConfig();
+    if (!initialConfig || initialConfig.pricingMode !== 'area_flat') {
+      return;
+    }
+
+    const AREA_TIERS = initialConfig.areaTiers ?? DEFAULT_BANDS;
+
+    const root = document.getElementById('wishful-area-flat-pricing');
+    if (!root) return;
+
+    const form =
+      (typeof window.wishfulGetCartForm === 'function' && window.wishfulGetCartForm()) ||
+      document.querySelector('form[action*="/cart/add"]');
+    const tbody = VT.findBody(root);
+    const tableWrap = VT.findWrapper(root);
+    if (!form || !tbody) return;
+
+    const q =
+      typeof window.wishfulQueryInForm === 'function'
+        ? window.wishfulQueryInForm.bind(null, form)
+        : (sel) => form.querySelector(sel) || document.querySelector(sel);
+
+    function defaultPricesFromCfg(cfg) {
+      const tiers = cfg?.areaTiers ?? DEFAULT_BANDS;
+      const fallbackPrices = (cfg?.rates ?? []).map((row) => Number(row?.[0]) || 0);
+      return fallbackPrices.length >= tiers.length
+        ? fallbackPrices
+        : DEFAULT_PRICES.slice(0, tiers.length);
+    }
+
+    const defaultPrices = defaultPricesFromCfg(initialConfig);
+    const bandLabels = AREA_TIERS.map((t) => t.label || '');
+    VT.renderRows(tbody, bandLabels, { showDiscount: false });
+
+    function getSelectedVariantId() {
+      const idInput = q('input[name="id"]');
+      if (idInput?.value) return String(idInput.value);
+      const fromUrl = new URLSearchParams(window.location.search).get('variant');
+      return fromUrl ? String(fromUrl) : null;
+    }
+
+    function resolvePricesForVariant(variantId) {
+      const cfg = readConfig();
+      const prices = defaultPricesFromCfg(cfg);
+      const map = cfg?.ratesByVariant;
+      if (!variantId || !map || typeof map !== 'object') {
+        return prices;
+      }
+
+      const tryEntry = (key) => {
+        const entry = map[key];
+        if (!Array.isArray(entry) || !entry.length) return null;
+        if (Array.isArray(entry[0])) {
+          return entry.map((row) => Number(row?.[0]) || 0);
+        }
+        return entry.map((n) => Number(n) || 0);
+      };
+
+      const numeric = variantId.split('/').pop();
+      return (
+        tryEntry(variantId) ||
+        (numeric ? tryEntry(numeric) : null) ||
+        (numeric
+          ? tryEntry(
+              'gid://shopify/ProductVariant/' + variantId.replace(/\D/g, ''),
+            )
+          : null) ||
+        prices
+      );
+    }
+
+    let PRICES = resolvePricesForVariant(getSelectedVariantId());
+
+    const unitEl = root.querySelector('[data-wishful-unit]');
+    const totalEl = root.querySelector('[data-wishful-total]');
+
+    const widthInput =
+      q('[name="properties[width]"]') ||
+      document.querySelector('[name="properties[width]"]');
+    const heightInput =
+      q('[name="properties[height]"]') ||
+      document.querySelector('[name="properties[height]"]');
+
+    root.hidden = false;
+    VT.setVisible(tableWrap, true);
+    VT.updateFlatBandPrices(tbody, { prices: PRICES, activeIndex: -1 });
+
+    const productRoot =
+      form.closest('.product') ||
+      form.closest('product-info') ||
+      form.closest('[data-section-type="product"]') ||
+      form;
+
+    function readQuantity() {
+      const input = productRoot.querySelector(
+        'quantity-input input[name="quantity"], input.quantity__input[name="quantity"], [name="quantity"]',
+      );
+      const qty = parseInt(input?.value, 10);
+      return qty > 0 ? qty : 1;
+    }
+
+    function areaIndex(sqIn, areaTiers, maxSq) {
+      if (sqIn <= 0 || sqIn > maxSq) return -1;
+
+      for (let i = 0; i < areaTiers.length; i++) {
+        const tier = areaTiers[i];
+        const min = tier.minSqIn;
+        const max = tier.maxSqIn;
+        const isLast = i === areaTiers.length - 1;
+
+        if (min != null && sqIn < min) continue;
+        if (max != null) {
+          if (isLast) {
+            if (sqIn > max) continue;
+          } else if (sqIn >= max) {
+            continue;
+          }
+        }
+        return i;
+      }
+
+      return -1;
+    }
+
+    function getActiveModifierDelta() {
+      const cfg = readConfig();
+      const mods = Array.isArray(cfg?.modifiers) ? cfg.modifiers : [];
+      let delta = 0;
+      mods.forEach((m) => {
+        if (!m || typeof m !== 'object') return;
+        const key = String(m.key || '').trim();
+        if (!key) return;
+        const amount = Number(m.amountPerUnit);
+        if (!Number.isFinite(amount) || amount === 0) return;
+        const input = q('[name="properties[' + key + ']"]');
+        const enabled = input?.type === 'checkbox'
+          ? input.checked === true
+          : String(input?.value || '').toLowerCase() === 'true';
+        if (enabled) delta += amount;
+      });
+      return delta;
+    }
+
+    function update() {
+      const cfg = readConfig();
+      const areaTiers = cfg?.areaTiers ?? DEFAULT_BANDS;
+      const maxSq = typeof cfg?.maxArea === 'number' ? cfg.maxArea : 100;
+
+      PRICES = resolvePricesForVariant(getSelectedVariantId());
+
+      const w = widthInput ? parseFloat(widthInput.value) : 0;
+      const h = heightInput ? parseFloat(heightInput.value) : 0;
+      const qty = readQuantity();
+
+      if (!w || !h) {
+        unitEl.textContent = '—';
+        totalEl.textContent = '';
+        VT.updateFlatBandPrices(tbody, { prices: PRICES, activeIndex: -1 });
+        return;
+      }
+
+      const sqIn = w * h;
+      const a = areaIndex(sqIn, areaTiers, maxSq);
+      if (a < 0) {
+        unitEl.textContent = 'Contact us for pricing over ' + maxSq + ' sq in';
+        totalEl.textContent = '';
+        VT.updateFlatBandPrices(tbody, { prices: PRICES, activeIndex: -1 });
+        return;
+      }
+
+      const unit = PRICES[a] ?? 0;
+      const adjustedUnit = Math.max(0, unit + getActiveModifierDelta());
+      const total = adjustedUnit * qty;
+
+      unitEl.textContent = VT.formatMoney(adjustedUnit) + ' each';
+      totalEl.textContent =
+        qty > 1
+          ? VT.formatMoney(total) + ' total (' + qty + ' pieces)'
+          : '';
+
+      VT.updateFlatBandPrices(tbody, { prices: PRICES, activeIndex: a });
+    }
+
+    ['input', 'change'].forEach((evt) => form.addEventListener(evt, update));
+    form.addEventListener('change', (event) => {
+      if (event.target?.name === 'id') update();
+    });
+    document.addEventListener('wishful:variant-change', update);
+    document.addEventListener('wishful:account-tier', update);
+
+    const variantIdInput = q('input[name="id"]');
+    if (variantIdInput) {
+      new MutationObserver(update).observe(variantIdInput, {
+        attributes: true,
+        attributeFilter: ['value'],
+      });
+    }
+
+    update();
+
+    let rerenderTimer;
+    const sectionObserver = new MutationObserver(() => {
+      clearTimeout(rerenderTimer);
+      rerenderTimer = setTimeout(update, 50);
+    });
+    sectionObserver.observe(productRoot, { childList: true, subtree: true });
+    };
+
+    if (typeof window.wishfulWhenVolumeTableReady === 'function') {
+      window.wishfulWhenVolumeTableReady(run);
+    } else {
+      run();
+    }
+  });
+</script>
+
+<style>
+  #wishful-area-flat-pricing.wishful-vinyl-pricing {
+    margin: 0 0 1.2rem;
+    border-radius: 8px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+  #wishful-area-flat-pricing .wishful-vinyl-pricing__label {
+    margin: 0;
+    font-size: 1.4rem;
+    color: #6b7280;
+    font-family: inherit;
+  }
+  #wishful-area-flat-pricing .wishful-vinyl-pricing__price {
+    margin: 0.25rem 0;
+    font-size: 1.7rem;
+    font-weight: 600;
+    font-family: inherit;
+  }
+  #wishful-area-flat-pricing .wishful-vinyl-pricing__total {
+    margin: 0.35rem 0 1rem;
+    font-size: 1.4rem;
+    color: #6b7280;
+    font-family: inherit;
+  }
+</style>

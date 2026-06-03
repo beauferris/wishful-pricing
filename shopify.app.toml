@@ -1,0 +1,45 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+# After creating the PUBLIC app in Partners, run: npm run link-public
+# Old custom app client_id is preserved in shopify.app.custom.toml
+client_id = "21aa6524ecb2ae3ff8689788c35d36b0"
+name = "Wishful Pricing"
+# Extension-only / no backend: Shopify default App Home (required for public distribution)
+application_url = "https://shopify.dev/apps/default-app-home"
+embedded = true
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "write_discounts,read_products,write_products"
+optional_scopes = [ ]
+use_legacy_install_flow = false
+
+[discount.metafields.app.function-configuration]
+type = "json"
+name = "Function configuration"
+description = "Vinyl pricing rate table and fees"
+access.admin = "merchant_read_write"
+access.storefront = "none"
+
+[product.metafields.app.pricing_config]
+type = "json"
+name = "Wishful storefront pricing"
+description = "Synced from discount admin for product-page price tables"
+access.admin = "merchant_read_write"
+access.storefront = "public_read"
+
+[shop.metafields.app.pricing_catalog]
+type = "json"
+name = "Wishful pricing catalog"
+description = "All product pricing configs for theme (keyed by product id)"
+access.admin = "merchant_read"
+access.storefront = "public_read"
+
+[webhooks]
+api_version = "2026-04"
+
+[auth]
+redirect_urls = [ ]
+
+[build]
+automatically_update_urls_on_dev = true

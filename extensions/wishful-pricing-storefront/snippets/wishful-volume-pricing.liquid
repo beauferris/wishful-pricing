@@ -1,0 +1,310 @@
+{% comment %}
+  Volume-only price preview. Uses shared wishful-volume-tier-table component.
+{% endcomment %}
+
+<div id="wishful-volume-pricing" class="wishful-vinyl-pricing">
+  <p class="form_label m0">Price per unit</p>
+  <p class="wishful-vinyl-pricing__price" data-wishful-unit>—</p>
+  <p class="wishful-vinyl-pricing__total" data-wishful-total></p>
+
+  {% render 'wishful-volume-tier-table' %}
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const run = function () {
+    const VT = window.WishfulVolumeTable;
+    if (!VT) return;
+
+    const DEFAULT_TIERS = [
+      { label: '1–24', min: 1 },
+      { label: '25–99', min: 25 },
+      { label: '100–249', min: 100 },
+      { label: '250–999', min: 250 },
+      { label: '1000+', min: 1000 },
+    ];
+    const DEFAULT_PRICES = [5, 4.5, 4, 3.5, 3];
+
+    function readConfig() {
+      return typeof window.wishfulReadPricingConfig === 'function'
+        ? window.wishfulReadPricingConfig()
+        : null;
+    }
+
+    const initialConfig = readConfig();
+    if (
+      initialConfig &&
+      initialConfig.pricingMode &&
+      initialConfig.pricingMode !== 'quantity_only'
+    ) {
+      return;
+    }
+
+    const root = document.getElementById('wishful-volume-pricing');
+    if (!root) return;
+
+    const unitEl = root.querySelector('[data-wishful-unit]');
+    const totalEl = root.querySelector('[data-wishful-total]');
+    const tbody = VT.findBody(root);
+    const tableWrap = VT.findWrapper(root);
+    const form =
+      (typeof window.wishfulGetCartForm === 'function' && window.wishfulGetCartForm()) ||
+      document.querySelector('form[action*="/cart/add"]');
+    if (!form || !tbody) return;
+
+    const q =
+      typeof window.wishfulQueryInForm === 'function'
+        ? window.wishfulQueryInForm.bind(null, form)
+        : (sel) => form.querySelector(sel) || document.querySelector(sel);
+
+    const cfg0 = readConfig();
+    const quantityTiers0 = cfg0?.quantityTiers?.length
+      ? cfg0.quantityTiers
+      : DEFAULT_TIERS;
+    const qtyLabels = quantityTiers0.map((t) => t.label || '');
+
+    VT.renderRows(tbody, qtyLabels, { showDiscount: false });
+    VT.setVisible(tableWrap, true);
+    root.hidden = false;
+
+    function getSelectedVariantId() {
+      const idInput = q('input[name="id"]');
+      if (idInput?.value) return String(idInput.value);
+      const params = new URLSearchParams(window.location.search);
+      const fromUrl = params.get('variant');
+      return fromUrl ? String(fromUrl) : null;
+    }
+
+    function volumePricesFromCfg(cfg) {
+      const rates = cfg?.rates;
+      if (!Array.isArray(rates) || !rates.length) return DEFAULT_PRICES;
+      const first = rates[0];
+      if (Array.isArray(first)) {
+        const nums = first.map((n) => Number(n)).filter((n) => !Number.isNaN(n));
+        return nums.length ? nums : DEFAULT_PRICES;
+      }
+      if (typeof first === 'number') {
+        const nums = rates.map((n) => Number(n)).filter((n) => !Number.isNaN(n));
+        return nums.length ? nums : DEFAULT_PRICES;
+      }
+      return DEFAULT_PRICES;
+    }
+
+    function resolvePricesForVariant(variantId) {
+      const cfg = readConfig();
+      const fallbackPrices = volumePricesFromCfg(cfg);
+      const map = cfg?.ratesByVariant;
+      if (!variantId || !map || typeof map !== 'object') {
+        return fallbackPrices;
+      }
+
+      const tryRow = (key) => {
+        const row = map[key];
+        if (!Array.isArray(row)) return null;
+        const nums = row.map((n) => Number(n)).filter((n) => !Number.isNaN(n));
+        return nums.length ? nums : null;
+      };
+
+      return (
+        tryRow(variantId) ||
+        tryRow(variantId.split('/').pop()) ||
+        tryRow('gid://shopify/ProductVariant/' + variantId.replace(/\D/g, '')) ||
+        fallbackPrices
+      );
+    }
+
+    const parsedMins = quantityTiers0.map((t) => Number(t.min) || 1);
+    let parsedPrices = resolvePricesForVariant(getSelectedVariantId());
+
+    const productRoot =
+      form.closest('.product') ||
+      form.closest('product-info') ||
+      form.closest('[data-section-type="product"]') ||
+      form;
+
+    function findQuantityInputs() {
+      const seen = new Set();
+      const inputs = [];
+      const selector =
+        'form[action*="/cart/add"] [name="quantity"], quantity-input input[name="quantity"], .product-form__quantity input[name="quantity"], input.quantity__input[name="quantity"]';
+      productRoot.querySelectorAll(selector).forEach((el) => {
+        if (!seen.has(el)) {
+          seen.add(el);
+          inputs.push(el);
+        }
+      });
+      return inputs;
+    }
+
+    function readQuantity() {
+      const preferred = [
+        productRoot.querySelector('quantity-input input[name="quantity"]'),
+        productRoot.querySelector('.quantity__input[name="quantity"]'),
+        productRoot.querySelector('.product-form__quantity input[name="quantity"]'),
+      ].filter(Boolean);
+
+      for (const input of preferred) {
+        const qty = parseQuantityValue(input);
+        if (qty > 0) return qty;
+      }
+
+      let best = 0;
+      for (const input of findQuantityInputs()) {
+        if (input.type === 'hidden') continue;
+        const qty = parseQuantityValue(input);
+        if (qty > best) best = qty;
+      }
+      return best > 0 ? best : 1;
+    }
+
+    function parseQuantityValue(input) {
+      const raw = input.value ?? input.getAttribute('value') ?? '1';
+      const qty = parseInt(String(raw), 10);
+      return Number.isFinite(qty) ? qty : 0;
+    }
+
+    function tierIndex(qty, mins) {
+      let index = 0;
+      for (let i = 0; i < mins.length; i++) {
+        if (qty >= mins[i]) index = i;
+      }
+      return index;
+    }
+
+    function getActiveModifierDelta() {
+      const cfg = readConfig();
+      const mods = Array.isArray(cfg?.modifiers) ? cfg.modifiers : [];
+      let delta = 0;
+      mods.forEach((m) => {
+        if (!m || typeof m !== 'object') return;
+        const key = String(m.key || '').trim();
+        if (!key) return;
+        const amount = Number(m.amountPerUnit);
+        if (!Number.isFinite(amount) || amount === 0) return;
+        const input = q('[name="properties[' + key + ']"]');
+        const enabled = input?.type === 'checkbox'
+          ? input.checked === true
+          : String(input?.value || '').toLowerCase() === 'true';
+        if (enabled) delta += amount;
+      });
+      return delta;
+    }
+
+    function update() {
+      const cfg = readConfig();
+      const mins = (cfg?.quantityTiers?.length ? cfg.quantityTiers : DEFAULT_TIERS).map(
+        (t) => Number(t.min) || 1,
+      );
+      parsedPrices = resolvePricesForVariant(getSelectedVariantId());
+      const qty = readQuantity();
+      const idx = tierIndex(qty, mins);
+      const modifierDelta = getActiveModifierDelta();
+      const baseUnit = parsedPrices[idx] ?? parsedPrices[0] ?? 0;
+      const unit = Math.max(0, baseUnit + modifierDelta);
+      const total = unit * qty;
+
+      unitEl.textContent = VT.formatMoney(unit) + ' each';
+      totalEl.textContent = qty > 1 ? VT.formatMoney(total) + ' total' : '';
+
+      VT.updateUnitPrices(tbody, {
+        prices: parsedPrices,
+        activeIndex: idx,
+        modifierDelta,
+      });
+      VT.setVisible(tableWrap, true);
+    }
+
+    const boundQtyInputs = new WeakSet();
+    let qtyClickBound = false;
+    let rerenderTimer;
+
+    function bindQuantityListeners() {
+      findQuantityInputs().forEach((input) => {
+        if (boundQtyInputs.has(input)) return;
+        boundQtyInputs.add(input);
+        ['input', 'change'].forEach((evt) => input.addEventListener(evt, update));
+        new MutationObserver(update).observe(input, {
+          attributes: true,
+          attributeFilter: ['value'],
+        });
+      });
+
+      if (!qtyClickBound) {
+        qtyClickBound = true;
+        productRoot.addEventListener(
+          'click',
+          (event) => {
+            if (
+              event.target.closest(
+                'quantity-input button, .quantity__button, [name="plus"], [name="minus"]',
+              )
+            ) {
+              setTimeout(update, 0);
+              requestAnimationFrame(update);
+              setTimeout(update, 50);
+            }
+          },
+          true,
+        );
+      }
+    }
+
+    bindQuantityListeners();
+    form.addEventListener('change', update);
+    form.addEventListener('change', (event) => {
+      if (event.target?.name === 'id') update();
+    });
+
+    document.addEventListener('wishful:variant-change', update);
+    document.addEventListener('wishful:account-tier', update);
+
+    const variantIdInput = q('input[name="id"]');
+    if (variantIdInput) {
+      new MutationObserver(update).observe(variantIdInput, {
+        attributes: true,
+        attributeFilter: ['value'],
+      });
+    }
+
+    update();
+
+    const sectionObserver = new MutationObserver(() => {
+      clearTimeout(rerenderTimer);
+      rerenderTimer = setTimeout(() => {
+        bindQuantityListeners();
+        update();
+      }, 50);
+    });
+    sectionObserver.observe(productRoot, { childList: true, subtree: true });
+    };
+
+    if (typeof window.wishfulWhenVolumeTableReady === 'function') {
+      window.wishfulWhenVolumeTableReady(run);
+    } else {
+      run();
+    }
+  });
+</script>
+
+<style>
+  .wishful-vinyl-pricing {
+    margin: 0 0 1.2rem;
+    border-radius: 8px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+  .wishful-vinyl-pricing__price {
+    margin: 0.25rem 0;
+    font-size: 1.7rem;
+    font-weight: 600;
+    font-family: inherit;
+  }
+  .wishful-vinyl-pricing__total {
+    margin: 0.35rem 0 1rem;
+    font-size: 1.4rem;
+    color: #6b7280;
+    font-family: inherit;
+  }
+  .m0 {
+    margin: 0;
+  }
+</style>

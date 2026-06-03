@@ -1,0 +1,369 @@
+{% comment %}
+  Live per-sticker price + volume tier table. Reads product metafield app.pricing_config
+  (synced on Save pricing in discount admin). Prefer {% render 'wishful-pricing' %}.
+{% endcomment %}
+
+<div id="wishful-vinyl-pricing" class="wishful-vinyl-pricing">
+  <p class="form_label m0">Price per sticker</p>
+  <p class="wishful-vinyl-pricing__price" data-wishful-unit>—</p>
+  <p class="wishful-vinyl-pricing__total" data-wishful-total></p>
+
+  {% render 'wishful-volume-tier-table', show_discount_column: true %}
+</div>
+
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    const run = function () {
+    const VT = window.WishfulVolumeTable;
+    if (!VT) return;
+
+    const DEFAULT_RATES = [
+      [0.2, 0.14, 0.12, 0.09, 0.07],
+      [0.17, 0.12, 0.09, 0.07, 0.06],
+      [0.09, 0.07, 0.06, 0.05, 0.04],
+    ];
+    const DEFAULT_QTY_MINS = [1, 25, 100, 250, 1000];
+    const DEFAULT_AREA_TIERS = [
+      { maxSqIn: 20 },
+      { minSqIn: 20, maxSqIn: 40 },
+      { minSqIn: 40, maxSqIn: 80 },
+    ];
+
+    function readConfig() {
+      return typeof window.wishfulReadPricingConfig === 'function'
+        ? window.wishfulReadPricingConfig()
+        : null;
+    }
+
+    const initialConfig = readConfig();
+    if (
+      initialConfig &&
+      (initialConfig.pricingMode === 'quantity_only' ||
+        initialConfig.pricingMode === 'area_flat')
+    ) {
+      return;
+    }
+
+    const root = document.getElementById('wishful-vinyl-pricing');
+    if (!root) return;
+
+    const form =
+      (typeof window.wishfulGetCartForm === 'function' && window.wishfulGetCartForm()) ||
+      document.querySelector('form[action*="/cart/add"]');
+    if (!form) return;
+
+    const q =
+      typeof window.wishfulQueryInForm === 'function'
+        ? window.wishfulQueryInForm.bind(null, form)
+        : (sel) => form.querySelector(sel) || document.querySelector(sel);
+
+    function getSelectedVariantId() {
+      const idInput = q('input[name="id"]');
+      if (idInput?.value) return String(idInput.value);
+      const fromUrl = new URLSearchParams(window.location.search).get('variant');
+      return fromUrl ? String(fromUrl) : null;
+    }
+
+    function isRatesMatrix(entry) {
+      return (
+        Array.isArray(entry) && entry.length > 0 && Array.isArray(entry[0])
+      );
+    }
+
+    function resolveRatesMatrixForVariant(variantId) {
+      const cfg = readConfig();
+      const fallbackRates = cfg?.rates ?? DEFAULT_RATES;
+      const map = cfg?.ratesByVariant;
+      if (!variantId || !map || typeof map !== 'object') {
+        return fallbackRates;
+      }
+
+      const tryKey = (key) => {
+        const entry = map[key];
+        if (!entry) return null;
+        if (isRatesMatrix(entry)) return entry;
+        if (
+          Array.isArray(entry) &&
+          entry.length &&
+          typeof entry[0] === 'number'
+        ) {
+          return entry.map((n) => [n]);
+        }
+        return null;
+      };
+
+      const numeric = variantId.split('/').pop();
+      return (
+        tryKey(variantId) ||
+        (numeric ? tryKey(numeric) : null) ||
+        (numeric
+          ? tryKey('gid://shopify/ProductVariant/' + variantId.replace(/\D/g, ''))
+          : null) ||
+        fallbackRates
+      );
+    }
+
+    let RATES = resolveRatesMatrixForVariant(getSelectedVariantId());
+
+    const unitEl = root.querySelector('[data-wishful-unit]');
+    const totalEl = root.querySelector('[data-wishful-total]');
+    const DEFAULT_QTY_LABELS = ['1–24', '25–99', '100–249', '250–999', '1000+'];
+    const tableWrap = VT.findWrapper(root);
+    const tierBody = VT.findBody(root);
+
+    const widthInput =
+      q('[name="properties[width]"]') ||
+      document.querySelector('[name="properties[width]"]');
+    const heightInput =
+      q('[name="properties[height]"]') ||
+      document.querySelector('[name="properties[height]"]');
+    if (!tierBody) return;
+
+    const cfg0 = readConfig();
+    const qtyLabels = cfg0?.quantityTiers?.length
+      ? cfg0.quantityTiers.map((t) => t.label)
+      : DEFAULT_QTY_LABELS;
+
+    VT.renderRows(tierBody, qtyLabels, { showDiscount: true });
+    VT.setVisible(tableWrap, true);
+
+    root.hidden = false;
+
+    const productRoot =
+      form.closest('.product') ||
+      form.closest('product-info') ||
+      form.closest('[data-section-type="product"]') ||
+      form.parentElement ||
+      document;
+
+    function findQuantityInputs() {
+      const seen = new Set();
+      const inputs = [];
+      const selector =
+        'form[action*="/cart/add"] [name="quantity"], quantity-input input[name="quantity"], .product-form__quantity input[name="quantity"], input.quantity__input[name="quantity"]';
+      productRoot.querySelectorAll(selector).forEach((el) => {
+        if (!seen.has(el)) {
+          seen.add(el);
+          inputs.push(el);
+        }
+      });
+      return inputs;
+    }
+
+    function readQuantity() {
+      for (const input of findQuantityInputs()) {
+        const qty = parseInt(input.value, 10);
+        if (qty > 0) return qty;
+      }
+      return 1;
+    }
+
+    function areaIndex(sqIn, areaTiers, maxSq) {
+      if (sqIn <= 0 || sqIn > maxSq) return -1;
+
+      for (let i = 0; i < areaTiers.length; i++) {
+        const tier = areaTiers[i];
+        const min = tier.minSqIn;
+        const max = tier.maxSqIn;
+        const isLast = i === areaTiers.length - 1;
+
+        if (min != null && sqIn < min) continue;
+        if (max != null) {
+          if (isLast) {
+            if (sqIn > max) continue;
+          } else if (sqIn >= max) {
+            continue;
+          }
+        }
+        return i;
+      }
+
+      return -1;
+    }
+
+    function qtyIndex(qty, qtyMins) {
+      let i = 0;
+      for (let j = 0; j < qtyMins.length; j++) {
+        if (qty >= qtyMins[j]) i = j;
+      }
+      return i;
+    }
+
+    function getActiveModifierDelta() {
+      const cfg = readConfig();
+      const mods = Array.isArray(cfg?.modifiers) ? cfg.modifiers : [];
+      let delta = 0;
+      mods.forEach((m) => {
+        if (!m || typeof m !== 'object') return;
+        const key = String(m.key || '').trim();
+        if (!key) return;
+        const amount = Number(m.amountPerUnit);
+        if (!Number.isFinite(amount) || amount === 0) return;
+        const input = q('[name="properties[' + key + ']"]');
+        const enabled = input?.type === 'checkbox'
+          ? input.checked === true
+          : String(input?.value || '').toLowerCase() === 'true';
+        if (enabled) delta += amount;
+      });
+      return delta;
+    }
+
+    function updateTierTable(sqIn, areaIdx, modifierDelta, activeIdx) {
+      VT.updateAreaQuantityRow(tierBody, {
+        rowRates: RATES[areaIdx],
+        sqIn,
+        modifierDelta,
+        activeIndex: activeIdx,
+      });
+      VT.setVisible(tableWrap, true);
+    }
+
+    function update() {
+      const cfg = readConfig();
+      const areaTiers = cfg?.areaTiers ?? DEFAULT_AREA_TIERS;
+      const maxSq = typeof cfg?.maxArea === 'number' ? cfg.maxArea : 80;
+      const qtyMins =
+        cfg?.quantityTiers?.map((t) => Number(t.min)) ?? DEFAULT_QTY_MINS;
+
+      RATES = resolveRatesMatrixForVariant(getSelectedVariantId());
+
+      const w = widthInput ? parseFloat(widthInput.value) : 0;
+      const h = heightInput ? parseFloat(heightInput.value) : 0;
+      const qty = readQuantity();
+      const modifierDelta = getActiveModifierDelta();
+
+      if (!w || !h) {
+        unitEl.textContent = '—';
+        totalEl.textContent = '';
+        VT.setVisible(tableWrap, true);
+        return;
+      }
+
+      const sqIn = w * h;
+      const a = areaIndex(sqIn, areaTiers, maxSq);
+      if (a < 0) {
+        unitEl.textContent =
+          'Contact us for pricing over ' + maxSq + ' sq in';
+        totalEl.textContent = '';
+        VT.setVisible(tableWrap, false);
+        return;
+      }
+
+      const activeIdx = qtyIndex(qty, qtyMins);
+      const rate = RATES[a][activeIdx];
+      let unit = Math.max(0, sqIn * rate + modifierDelta);
+      const total = unit * qty;
+
+      unitEl.textContent = VT.formatMoney(unit);
+      totalEl.textContent =
+        qty > 1
+          ? VT.formatMoney(total) + ' order total (' + qty + ' stickers)'
+          : '';
+
+      updateTierTable(sqIn, a, modifierDelta, activeIdx);
+    }
+
+    const boundQtyInputs = new WeakSet();
+    let qtyClickBound = false;
+
+    function bindQuantityListeners() {
+      findQuantityInputs().forEach((input) => {
+        if (boundQtyInputs.has(input)) return;
+        boundQtyInputs.add(input);
+
+        ['input', 'change'].forEach((evt) => {
+          input.addEventListener(evt, update);
+        });
+
+        const observer = new MutationObserver(update);
+        observer.observe(input, {
+          attributes: true,
+          attributeFilter: ['value'],
+        });
+      });
+
+      if (!qtyClickBound) {
+        qtyClickBound = true;
+        productRoot.addEventListener(
+          'click',
+          (event) => {
+            if (
+              event.target.closest(
+                'quantity-input button, .quantity__button, [name="plus"], [name="minus"]',
+              )
+            ) {
+              setTimeout(update, 0);
+              requestAnimationFrame(update);
+            }
+          },
+          true,
+        );
+      }
+    }
+
+    ['input', 'change'].forEach((evt) => {
+      form.addEventListener(evt, update);
+    });
+
+    form.addEventListener('change', (event) => {
+      if (event.target?.name === 'id') update();
+    });
+    document.addEventListener('wishful:variant-change', update);
+    document.addEventListener('wishful:account-tier', update);
+
+    const variantIdInput = q('input[name="id"]');
+    if (variantIdInput) {
+      new MutationObserver(update).observe(variantIdInput, {
+        attributes: true,
+        attributeFilter: ['value'],
+      });
+    }
+
+    bindQuantityListeners();
+    update();
+
+    let rerenderTimer;
+    const sectionObserver = new MutationObserver(() => {
+      clearTimeout(rerenderTimer);
+      rerenderTimer = setTimeout(() => {
+        bindQuantityListeners();
+        update();
+      }, 50);
+    });
+    sectionObserver.observe(productRoot, { childList: true, subtree: true });
+    };
+
+    if (typeof window.wishfulWhenVolumeTableReady === 'function') {
+      window.wishfulWhenVolumeTableReady(run);
+    } else {
+      run();
+    }
+  });
+</script>
+
+<style>
+  .wishful-vinyl-pricing {
+    margin: 0 0 1.2rem;
+    border-radius: 8px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+  .wishful-vinyl-pricing__label {
+    margin: 0;
+    font-family: inherit;
+  }
+  .wishful-vinyl-pricing__price {
+    margin: 0.25rem 0;
+    font-size: 1.7rem;
+    font-weight: 600;
+    font-family: inherit;
+  }
+  .wishful-vinyl-pricing__total {
+    margin: 0.35rem 0 1rem;
+    font-size: 1.4rem;
+    color: #6b7280;
+    font-family: inherit;
+  }
+  .m0 {
+    margin:0;
+  }
+</style>

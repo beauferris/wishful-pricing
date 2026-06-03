@@ -1,0 +1,94 @@
+{% comment %}
+  Volume product options (e.g. pin back discount). Rendered via wishful-pricing on volume-only products.
+{% endcomment %}
+
+<fieldset class="wishful-volume-properties" data-wishful-volume-properties>
+  <legend class="form__label ">Backing</legend>
+  <div class="wishful-volume-properties__row" data-wishful-modifiers></div>
+</fieldset>
+
+<script>
+  (function () {
+    var cfg =
+      typeof window.wishfulReadPricingConfig === 'function' &&
+      window.wishfulReadPricingConfig();
+    if (!cfg || cfg.pricingMode !== 'quantity_only') return;
+
+    var host = document.querySelector('[data-wishful-volume-properties] [data-wishful-modifiers]');
+    if (!host) return;
+
+    var mods = (Array.isArray(cfg.modifiers) ? cfg.modifiers : [])
+      .filter(function (m) { return m && typeof m === 'object'; })
+      .map(function (m) {
+        return { key: m.key, label: m.label, amountPerUnit: Number(m.amountPerUnit) };
+      })
+      .filter(function (m) { return Number.isFinite(m.amountPerUnit) && m.amountPerUnit !== 0; })
+      .filter(function (m) { return m.key && String(m.key).trim() !== ''; });
+
+    if (!mods.length) {
+      var fieldset = document.querySelector('[data-wishful-volume-properties]');
+      if (fieldset) fieldset.remove();
+      return;
+    }
+
+    var currency = '{{ cart.currency.iso_code | default: shop.currency }}';
+    host.innerHTML = mods.map(function (m, i) {
+      var key = String(m.key).trim();
+      var label = String(m.label || key);
+      var amount = Number(m.amountPerUnit) || 0;
+      var sign = amount >= 0 ? '+' : '−';
+      var abs = Math.abs(amount);
+      var formatted = new Intl.NumberFormat(undefined, { style: 'currency', currency: currency }).format(abs);
+      var id = 'wishful-mod-' + key.replace(/[^a-z0-9_-]/gi, '') + '-' + i;
+
+      return (
+        '<label for="' + id + '">' +
+          '<input id="' + id + '" type="checkbox" name="properties[' + key + ']" value="true" form="{{ product_form_id }}">' +
+          label + ' (' + sign + formatted + ' per unit)' +
+        '</label>'
+      );
+    }).join('');
+
+    var selectedInput = document.querySelector('[name="properties[wishful_modifiers]"]');
+    if (!selectedInput) {
+      selectedInput = document.createElement('input');
+      selectedInput.type = 'hidden';
+      selectedInput.name = 'properties[wishful_modifiers]';
+      selectedInput.setAttribute('form', '{{ product_form_id }}');
+      var form = document.querySelector('form[action*="/cart/add"]');
+      if (form) form.appendChild(selectedInput);
+    }
+
+    function syncSelectedModifiers() {
+      if (!selectedInput) return;
+      var keys = Array.from(
+        host.querySelectorAll('input[type="checkbox"][name^="properties["]'),
+      )
+        .filter(function (input) { return input.checked; })
+        .map(function (input) {
+          var m = input.name.match(/^properties\[(.+)\]$/);
+          return m ? m[1] : '';
+        })
+        .filter(Boolean);
+      selectedInput.value = keys.join(',');
+    }
+
+    host.addEventListener('change', syncSelectedModifiers);
+    syncSelectedModifiers();
+  })();
+</script>
+
+<style>
+  .wishful-volume-properties {
+    margin: 0 0 1.2rem;
+    padding: 0;
+    border: 0;
+  }
+  .wishful-volume-properties__row label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1.4rem;
+    font-weight: normal;
+  }
+</style>

@@ -1,0 +1,63 @@
+{
+  "payload": {
+    "export": "cart-lines-discounts-generate-run",
+    "target": "cart.lines.discounts.generate.run",
+    "input": {
+      "cart": {
+        "lines": [
+          {
+            "id": "gid://shopify/CartLine/1",
+            "quantity": 25,
+            "cost": {
+              "subtotalAmount": {
+                "amount": "50.00"
+              }
+            },
+            "width": { "value": "4" },
+            "widthLabel": null,
+            "height": { "value": "2" },
+            "heightLabel": null,
+            "squareInches": null,
+            "individuallyCut": null,
+            "individuallyCutLabel": null,
+            "merchandise": {
+              "__typename": "ProductVariant",
+              "product": { "id": "gid://shopify/Product/1" },
+              "widthInches": null,
+              "heightInches": null,
+              "individuallyCut": null
+            }
+          }
+        ],
+        "buyerIdentity": null
+      },
+      "discount": {
+        "discountClasses": ["PRODUCT"],
+        "metafield": {
+          "jsonValue": {}
+        }
+      }
+    },
+    "output": {
+      "operations": [
+        {
+          "productDiscountsAdd": {
+            "selectionStrategy": "ALL",
+            "candidates": [
+              {
+                "message": "$1.12 each — 8 sq in @ $0.14/sq in",
+                "targets": [{ "cartLine": { "id": "gid://shopify/CartLine/1" } }],
+                "value": {
+                  "fixedAmount": {
+                    "amount": "22.00",
+                    "appliesToEachItem": false
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

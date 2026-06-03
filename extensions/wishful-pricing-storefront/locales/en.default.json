@@ -1,0 +1,8 @@
+{
+  "wishful_pricing": {
+    "name": "Wishful pricing",
+    "setup": "Shows live pricing when this product is configured in a Wishful automatic discount (Discounts → your discount → Save pricing).",
+    "form_id_label": "Product form ID",
+    "form_id_info": "Leave blank for Dawn-style themes (uses product-form-{{ section.id }}). Set manually if your theme uses a different form id."
+  }
+}

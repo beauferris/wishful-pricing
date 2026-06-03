@@ -1,0 +1,126 @@
+{% comment %}
+  Single product-page entry — synced from discount admin on "Save pricing".
+
+  Preferred: Theme editor → Product template → Add block "Wishful pricing" (app block).
+  Legacy: {% render 'wishful-pricing', product: product, product_form_id: product_form_id %}
+
+  Wishful UI only appears after the product is added in discount admin and Save pricing is run.
+{% endcomment %}
+
+{% liquid
+  assign wishful_catalog = null
+  assign wishful_product_cfg = null
+  assign wishful_has_pricing = false
+
+  assign wishful_app_catalog = shop.metafields.app.pricing_catalog.value
+  if wishful_app_catalog == blank
+    assign wishful_app_catalog = shop.metafields['$app'].pricing_catalog.value
+  endif
+
+  assign wishful_app_product_cfg = product.metafields.app.pricing_config.value
+  if wishful_app_product_cfg == blank
+    assign wishful_app_product_cfg = product.metafields['$app'].pricing_config.value
+  endif
+
+  if wishful_app_catalog != blank
+    assign wishful_catalog = wishful_app_catalog
+  elsif shop.metafields.wishful.pricing_catalog.value != blank
+    assign wishful_catalog = shop.metafields.wishful.pricing_catalog.value
+  endif
+
+  if wishful_app_product_cfg != blank
+    assign wishful_product_cfg = wishful_app_product_cfg
+  elsif product.metafields.wishful.pricing_config.value != blank
+    assign wishful_product_cfg = product.metafields.wishful.pricing_config.value
+  endif
+
+  assign wishful_pid = product.id | append: ''
+  assign wishful_gid = 'gid://shopify/Product/' | append: wishful_pid
+
+  if wishful_catalog != blank
+    if wishful_catalog[wishful_pid] != blank or wishful_catalog[wishful_gid] != blank
+      assign wishful_has_pricing = true
+    endif
+  endif
+
+  if wishful_has_pricing == false and wishful_product_cfg != blank
+    assign wishful_has_pricing = true
+  endif
+%}
+
+{% unless wishful_has_pricing %}
+  {% comment %} Product not in any saved Wishful pricing group — no custom UI or discount preview. {% endcomment %}
+{% else %}
+  <div
+    class="wishful-pricing-root"
+    data-wishful-pricing-root
+    data-wishful-form-id="{{ product_form_id }}"
+  >
+  {% liquid
+    assign wishful_volume_only = false
+    assign wishful_area_flat = false
+    assign wishful_pricing_mode = 'area_quantity'
+
+    assign wishful_entry = wishful_catalog[wishful_pid]
+    if wishful_entry == blank
+      assign wishful_entry = wishful_catalog[wishful_gid]
+    endif
+    if wishful_entry == blank and wishful_product_cfg != blank
+      assign wishful_entry = wishful_product_cfg
+    endif
+
+    if wishful_entry.pricingMode == 'quantity_only'
+      assign wishful_volume_only = true
+      assign wishful_pricing_mode = 'quantity_only'
+    elsif wishful_entry.pricingMode == 'area_flat'
+      assign wishful_area_flat = true
+      assign wishful_pricing_mode = 'area_flat'
+    elsif wishful_entry.pricingMode != blank
+      assign wishful_pricing_mode = wishful_entry.pricingMode
+    else
+      assign wishful_json = wishful_entry | json
+      if wishful_json contains '"pricingMode":"quantity_only"' or wishful_json contains '"pricingMode": "quantity_only"'
+        assign wishful_volume_only = true
+        assign wishful_pricing_mode = 'quantity_only'
+      endif
+      if wishful_json contains '"pricingMode":"area_flat"' or wishful_json contains '"pricingMode": "area_flat"'
+        assign wishful_area_flat = true
+        assign wishful_pricing_mode = 'area_flat'
+      endif
+    endif
+  %}
+
+  {% render 'wishful-pricing-config', product: product %}
+
+  {% render 'wishful-vinyl-properties',
+    product_form_id: product_form_id,
+    wishful_volume_only: wishful_volume_only
+  %}
+
+  {% if wishful_volume_only %}
+    {% render 'wishful-volume-properties', product_form_id: product_form_id %}
+  {% endif %}
+  {% render 'wishful-cart-properties-sync' %}
+  {% render 'wishful-account-tier-cart' %}
+
+  <script>
+    (function () {
+      var cfg =
+        typeof window.wishfulReadPricingConfig === 'function' &&
+        window.wishfulReadPricingConfig();
+      if (cfg && cfg.pricingMode === 'quantity_only') {
+        var el = document.querySelector('[data-wishful-vinyl-properties]');
+        if (el) el.remove();
+      }
+    })();
+  </script>
+
+  {% if wishful_volume_only %}
+    {% render 'wishful-volume-pricing', product: product %}
+  {% elsif wishful_area_flat %}
+    {% render 'wishful-area-flat-pricing', product: product %}
+  {% else %}
+    {% render 'wishful-vinyl-pricing', product: product %}
+  {% endif %}
+  </div>
+{% endunless %}
